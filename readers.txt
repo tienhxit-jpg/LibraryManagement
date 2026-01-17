@@ -1,0 +1,10 @@
+R001|Nguyen Van An|
+R002|Tran Thi Binh|B001,B005
+R003|Pham Minh Chau|B003
+R004|Hoang Trang Dung|B002,B007,B008
+R005|Vu Duc Em|
+R006|Le Phuong Ha|B004
+R007|Do Huu Ich|B001,B009
+R008|Mac Kien Lam|B010
+R009|Ngo Long My|B006
+R010|Phan Nhi Oanh|B002,B005

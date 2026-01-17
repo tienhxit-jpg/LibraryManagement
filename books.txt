@@ -1,0 +1,10 @@
+B001|Lap Trinh C++|Bjarne Stroustrup|5|1
+B002|Cau Truc Du Lieu|Thomas Cormen|3|1
+B003|Giai Thuat|Robert Sedgewick|4|1
+B004|Mang May Tinh|Andrew Tanenbaum|2|1
+B005|He Dieu Hanh|Silberschatz|6|1
+B006|Co So Du Lieu|Ramakrishnan|2|1
+B007|Python Co Ban|Guido van Rossum|8|1
+B008|JavaScript Pro|Kyle Simpson|3|1
+B009|Design Patterns|Gang of Four|1|1
+B010|Clean Code|Robert Martin|4|1
