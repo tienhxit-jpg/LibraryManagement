@@ -1,9 +1,7 @@
 /* Case study 4: Hệ thống quản lý thư viện số.
-   Simple OOP C++ implementation using a BST to store books.
 */
 #include <iostream>
 #include <string>
-#include <limits>
 #include "Library.h"
 
 using namespace std;
@@ -31,7 +29,7 @@ int main()
 		showMenu();
 		cout << "Chon: ";
 		int choice; if (!(cin >> choice)) break;
-		cin.ignore(numeric_limits<streamsize>::max(), '\n');
+		cin.ignore();
 		if (choice == 1) {
 			cout << "Dang tai du lieu tu books.txt va readers.txt...\n";
 			if (!lib.loadBooks("books.txt")) cout << "Khong the tai books.txt\n";
@@ -48,28 +46,76 @@ int main()
 			for (auto &b : res) cout << b.getTitle() << " | " << b.getAuthor() << " | " << b.getId() << '\n';
 		} else if (choice == 5) {
 			cout << "Ma doc gia: "; string id; getline(cin, id);
+			if (!lib.readerExists(id)) {
+				cout << "Loi: Ma doc gia '" << id << "' khong ton tai!\n";
+				continue;
+			}
 			cout << "Ma sach: "; string bookId; getline(cin, bookId);
-			if (lib.borrowBook(bookId, id)) cout << "Muon sach thanh cong\n"; else cout << "Muon that bai\n";
+			if (!lib.bookExists(bookId)) {
+				cout << "Loi: Ma sach '" << bookId << "' khong ton tai!\n";
+				continue;
+			}
+			if (lib.borrowBook(bookId, id)) {
+				cout << "Muon sach thanh cong\n";
+			} else {
+				cout << "Muon that bai (co the sach da het)\n";
+			}
 		} else if (choice == 6) {
 			cout << "Ma doc gia: "; string id; getline(cin, id);
+			if (!lib.readerExists(id)) {
+				cout << "Loi: Ma doc gia '" << id << "' khong ton tai!\n";
+				continue;
+			}
 			cout << "Ma sach: "; string bookId; getline(cin, bookId);
-			if (lib.returnBook(bookId, id)) cout << "Tra sach thanh cong\n"; else cout << "Tra that bai\n";
+			if (!lib.bookExists(bookId)) {
+				cout << "Loi: Ma sach '" << bookId << "' khong ton tai!\n";
+				continue;
+			}
+			if (lib.returnBook(bookId, id)) {
+				cout << "Tra sach thanh cong\n";
+			} else {
+				cout << "Tra that bai (doc gia khong muon sach nay)\n";
+			}
 		} else if (choice == 7) {
 			lib.listReaders();
 		} else if (choice == 8) {
 			cout << "Ma doc gia moi: "; string id; getline(cin, id);
+			if (lib.readerExists(id)) {
+				cout << "Loi: Ma doc gia '" << id << "' da ton tai!\n";
+				continue;
+			}
 			cout << "Ho ten: "; string name; getline(cin, name);
 			Reader r(id, name);
-			lib.addReader(r);
-			cout << "Da them doc gia.\n";
+			if (lib.addReader(r)) {
+				cout << "Da them doc gia.\n";
+			} else {
+				cout << "Them that bai.\n";
+			}
 		} else if (choice == 9) {
 			cout << "Ma sach can xoa: "; string bid; getline(cin, bid);
-			if (lib.removeBook(bid)) cout << "Da xoa sach.\n"; else cout << "Xoa that bai (khong tim thay hoac dang duoc muon).\n";
+			if (lib.removeBook(bid)) {
+				cout << "Da xoa sach.\n";
+			} else {
+				cout << "Xoa that bai (khong tim thay hoac dang duoc muon).\n";
+			}
 		} else if (choice == 10) {
 			cout << "Ma doc gia can xoa: "; string rid; getline(cin, rid);
-			if (lib.removeReader(rid)) cout << "Da xoa doc gia.\n"; else cout << "Xoa that bai (khong tim thay).\n";
+			if (lib.removeReader(rid)) {
+				cout << "Da xoa doc gia.\n";
+			} else {
+				cout << "Xoa that bai (khong tim thay hoac dang muon sach).\n";
+			}
 		} else if (choice == 0) running = false;
 	}
+	
+	// Luu du lieu truoc khi thoat
+	cout << "Dang luu du lieu...\n";
+	if (lib.saveBooks("books.txt")) cout << "Da luu books.txt\n";
+	else cout << "Loi khi luu books.txt\n";
+	
+	if (lib.saveReaders("readers.txt")) cout << "Da luu readers.txt\n";
+	else cout << "Loi khi luu readers.txt\n";
+	
 	cout << "Tam biet.\n";
 	return 0;
 }

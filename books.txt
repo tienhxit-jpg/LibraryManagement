@@ -1,5 +1,0 @@
-B001|The C++ Programming Language|Bjarne Stroustrup|5|1
-B002|Clean Code|Robert C. Martin|3|1
-B003|Introduction to Algorithms|Thomas H. Cormen|2|1
-B004|Design Patterns|Erich Gamma et al.|4|1
-B005|Effective Modern C++|Scott Meyers|6|1

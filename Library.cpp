@@ -4,11 +4,19 @@
 #include <algorithm>
 #include <cctype>
 #include <iostream>
-#include <iomanip>
 
 static inline string toLower(string s) {
     transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::tolower(c); });
     return s;
+}
+
+void Library::writeFile(const string &filename, const string &content)
+{
+    ofstream ofs(filename, ios::app);
+    if (ofs) {
+        ofs << content << "|";
+        ofs.close();
+    }
 }
 
 Library::Library() {}
@@ -20,28 +28,13 @@ void Library::addBook(const Book& book) {
 }
 
 void Library::listAll() const {
-    cout << left
-         << setw(5)  << "ID"
-         << setw(30) << "Title"
-         << setw(25) << "Author"
-         << setw(10) << "Qty"
-         << setw(12) << "Status"
-         << endl;
-
-    cout << string(82, '-') << endl;
-
     for (const auto& pair : books) {
         const Book& b = pair.second;
-        cout << left
-             << setw(5)  << b.getId()
-             << setw(30) << b.getTitle()
-             << setw(25) << b.getAuthor()
-             << setw(10) << b.getQuantity()
-             << setw(12) << (b.getAvailability() ? "Available" : "Borrowed")
-             << endl;
+        cout << b.getTitle() << " | " << b.getAuthor() << " | " << b.getId()
+             << " | So luong: " << b.getQuantity()
+             << " | Trang thai: " << (b.getQuantity() > 0 ? "Con sach" : "Het sach") << "\n";
     }
 }
-
 
 vector<Book> Library::searchByTitle(const string& keyword) const {
     string k = toLower(keyword);
@@ -74,10 +67,18 @@ vector<Book> Library::suggest(const string& keyword) const {
 bool Library::borrowBook(const string& bookId, const string& readerId) {
     auto it = books.find(bookId);
     if (it == books.end()) return false;
-    if (!it->second.getAvailability()) return false;
+    if (it->second.getQuantity() <= 0) return false;  // Kiem tra so luong
     Reader* r = findReaderById(readerId);
     if (!r) return false;
-    it->second.setAvailability(false);
+    
+    // Giam so luong sach
+    it->second.decreaseQuantity(1);
+    
+    // Neu het sach thi set availability = false
+    if (it->second.getQuantity() == 0) {
+        it->second.setAvailability(false);
+    }
+    
     r->borrowBook(bookId);
     return true;
 }
@@ -87,7 +88,13 @@ bool Library::returnBook(const string& bookId, const string& readerId) {
     if (it == books.end()) return false;
     Reader* r = findReaderById(readerId);
     if (!r) return false;
+    
+    // Kiem tra doc gia co muon sach nay khong
     if (r->returnBook(bookId)) {
+        // Tang so luong sach
+        it->second.increaseQuantity(1);
+        
+        // Set availability = true vi da co sach
         it->second.setAvailability(true);
         return true;
     }
@@ -140,7 +147,39 @@ bool Library::loadReaders(const string& filename) {
     return true;
 }
 
-bool Library::addReader(const Reader& r) { 
+bool Library::saveBooks(const string &filename)
+{
+        ofstream ofs(filename);
+    if (!ofs) return false;
+    for (const auto& pair : books) {
+        const Book& b = pair.second;
+        ofs << b.getId() << "|" << b.getTitle() << "|" << b.getAuthor() 
+            << "|" << b.getQuantity() << "|" << (b.getAvailability() ? "1" : "0") << "\n";
+    }
+    ofs.close();
+    return true;
+}
+
+bool Library::saveReaders(const string &filename)
+{
+    ofstream ofs(filename);
+    if (!ofs) return false;
+    for (const auto& r : readers) {
+        ofs << r.getId() << "|" << r.getName() << "|";
+        const auto& borrowed = r.getBorrowed();
+        for (size_t i = 0; i < borrowed.size(); ++i) {
+            ofs << borrowed[i];
+            if (i + 1 < borrowed.size()) ofs << ",";
+        }
+        ofs << "\n";
+    }
+    ofs.close();
+    return true;
+}
+
+bool Library::addReader(const Reader& r) {
+    // Kiem tra trung ID
+    if (readerExists(r.getId())) return false;
     readers.push_back(r); 
     return true; 
 }
@@ -165,6 +204,15 @@ Reader* Library::findReaderById(const string& id) {
 bool Library::removeBook(const string& bookId) {
     auto it = books.find(bookId);
     if (it == books.end()) return false;
+    
+    // Kiem tra xem co doc gia nao dang muon sach nay khong
+    for (const auto& r : readers) {
+        const auto& borrowed = r.getBorrowed();
+        for (const auto& bid : borrowed) {
+            if (bid == bookId) return false;  // Sach dang duoc muon, khong the xoa
+        }
+    }
+    
     books.erase(it);
     return true;
 }
@@ -172,9 +220,30 @@ bool Library::removeBook(const string& bookId) {
 bool Library::removeReader(const string& readerId) {
     for (auto it = readers.begin(); it != readers.end(); ++it) {
         if (it->getId() == readerId) {
+            // Kiem tra xem doc gia co dang muon sach nao khong
+            if (!it->getBorrowed().empty()) {
+                return false;  // Doc gia dang muon sach, khong the xoa
+            }
             readers.erase(it);
             return true;
         }
+    }
+    return false;
+}
+
+Book* Library::findBookById(const string& id) {
+    auto it = books.find(id);
+    if (it != books.end()) return &(it->second);
+    return nullptr;
+}
+
+bool Library::bookExists(const string& id) const {
+    return books.find(id) != books.end();
+}
+
+bool Library::readerExists(const string& id) const {
+    for (const auto& r : readers) {
+        if (r.getId() == id) return true;
     }
     return false;
 }

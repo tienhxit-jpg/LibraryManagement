@@ -1,4 +1,0 @@
-
-R001|Alice Nguyen|
-R002|Nguyen Van B|B001
-R003|Tran Thi C|B002,B004
