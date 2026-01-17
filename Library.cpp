@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <iostream>
+#include <iomanip>
 
 static inline string toLower(string s) {
     transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::tolower(c); });
@@ -19,13 +20,28 @@ void Library::addBook(const Book& book) {
 }
 
 void Library::listAll() const {
+    cout << left
+         << setw(5)  << "ID"
+         << setw(30) << "Title"
+         << setw(25) << "Author"
+         << setw(10) << "Qty"
+         << setw(12) << "Status"
+         << endl;
+
+    cout << string(82, '-') << endl;
+
     for (const auto& pair : books) {
         const Book& b = pair.second;
-        cout << b.getTitle() << " | " << b.getAuthor() << " | " << b.getId()
-             << " | Quantity: " << b.getQuantity()
-             << " | " << (b.getAvailability() ? "Available" : "Borrowed") << "\n";
+        cout << left
+             << setw(5)  << b.getId()
+             << setw(30) << b.getTitle()
+             << setw(25) << b.getAuthor()
+             << setw(10) << b.getQuantity()
+             << setw(12) << (b.getAvailability() ? "Available" : "Borrowed")
+             << endl;
     }
 }
+
 
 vector<Book> Library::searchByTitle(const string& keyword) const {
     string k = toLower(keyword);
