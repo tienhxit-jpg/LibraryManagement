@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <iostream>
+#include <iomanip>
 
 static inline string toLower(string s) {
     transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::tolower(c); });
@@ -14,8 +15,7 @@ void Library::writeFile(const string &filename, const string &content)
 {
     ofstream ofs(filename, ios::app);
     if (ofs) {
-        ofs << content << "|";
-        ofs.close();
+        ofs << content << "\n";
     }
 }
 
@@ -23,16 +23,41 @@ Library::Library() {}
 
 Library::~Library() {}
 
-void Library::addBook(const Book& book) { 
+bool Library::addBook(const Book& book) { 
+    // Kiem tra trung ID
+    if (bookExists(book.getId())) return false;
+    
     books[book.getId()] = book;
+
+    stringstream ss;
+    ss << book.getId() << "|" << book.getTitle() << "|" << book.getAuthor()
+       << "|" << book.getQuantity();
+    writeFile("books_them.txt", ss.str());
+    return true;
 }
 
 void Library::listAll() const {
-    for (const auto& pair : books) {
-        const Book& b = pair.second;
-        cout << b.getTitle() << " | " << b.getAuthor() << " | " << b.getId()
-             << " | So luong: " << b.getQuantity()
-             << " | Trang thai: " << (b.getQuantity() > 0 ? "Con sach" : "Het sach") << "\n";
+    vector<string> ids;
+    for (const auto& kv : books) ids.push_back(kv.first);
+    sort(ids.begin(), ids.end());
+    cout << left
+        << setw(5)  << "Ma"
+        << setw(30) << "Ten"
+        << setw(25) << "Tac gia"
+        << setw(10) << "So luong"
+        << setw(12) << "Tinh trang"
+        << endl;
+    for (const auto& id : ids) {
+        auto it = books.find(id);
+        if (it == books.end()) continue;
+        const Book& b = it->second;
+        cout << left
+            << setw(5)  << b.getId()
+            << setw(30) << b.getTitle()
+            << setw(25) << b.getAuthor()
+            << setw(10) << b.getQuantity()
+            << setw(12) << (b.getAvailability() ? "Available" : "Borrowed")
+            << endl;
     }
 }
 
@@ -91,10 +116,8 @@ bool Library::returnBook(const string& bookId, const string& readerId) {
     
     // Kiem tra doc gia co muon sach nay khong
     if (r->returnBook(bookId)) {
-        // Tang so luong sach
         it->second.increaseQuantity(1);
         
-        // Set availability = true vi da co sach
         it->second.setAvailability(true);
         return true;
     }
@@ -111,14 +134,35 @@ bool Library::loadBooks(const string& filename) {
         stringstream ss(line);
         string id, title, author, qty, avail;
         if (!getline(ss, id, '|')) continue;
+        if (id.empty()) continue;  // Kiem tra ID trong
         if (!getline(ss, title, '|')) continue;
         if (!getline(ss, author, '|')) continue;
         if (!getline(ss, qty, '|')) qty = "0";
         if (!getline(ss, avail)) avail = "1";
-        int quantity = stoi(qty);
+        
+        // Kiem tra va convert quantity
+        int quantity = 0;
+        try {
+            quantity = stoi(qty);
+            if (quantity < 0) {
+                cout << "Canh bao: So luong am cho sach " << id << ", dung 0\n";
+                quantity = 0;
+            }
+        } catch (const exception& e) {
+            cout << "Canh bao: Khong the parse so luong cho sach " << id << ", dung 0\n";
+            quantity = 0;
+        }
+        
+        // Kiem tra ID trung lap
+        if (bookExists(id)) {
+            cout << "Canh bao: Ma sach " << id << " da ton tai, bo qua\n";
+            continue;
+        }
+        
         Book b(id, title, author, quantity, (avail != "0"));
-        addBook(b);
+        books[b.getId()] = b;  // Dung truc tiep thay vi addBook() de tranh log duplicate
     }
+    ifs.close();
     return true;
 }
 
@@ -132,18 +176,46 @@ bool Library::loadReaders(const string& filename) {
         stringstream ss(line);
         string id, name, list;
         if (!getline(ss, id, '|')) continue;
+        if (id.empty()) continue;  // Kiem tra ID trong
         if (!getline(ss, name, '|')) continue;
+        if (name.empty()) {
+            cout << "Canh bao: Dang ki ten trong cho doc gia " << id << ", bo qua\n";
+            continue;
+        }
         if (!getline(ss, list)) list = "";
+        
+        // Kiem tra ID trung lap
+        if (readerExists(id)) {
+            cout << "Canh bao: Ma doc gia " << id << " da ton tai, bo qua\n";
+            continue;
+        }
+        
         Reader r(id, name);
         if (!list.empty()) {
             stringstream ss2(list);
             string tok;
             while (getline(ss2, tok, ',')) {
-                if (!tok.empty()) r.borrowBook(tok);
+                // Trim whitespace from token
+                size_t start = tok.find_first_not_of(" \t\r\n");
+                size_t end = tok.find_last_not_of(" \t\r\n");
+                if (start != string::npos) {
+                    tok = tok.substr(start, end - start + 1);
+                } else {
+                    continue;  // Skip empty tokens
+                }
+                if (!tok.empty()) {
+                    // Kiem tra sach co ton tai khong
+                    if (!bookExists(tok)) {
+                        cout << "Canh bao: Sach " << tok << " khong ton tai cho doc gia " << id << ", bo qua\n";
+                    } else {
+                        r.borrowBook(tok);
+                    }
+                }
             }
         }
         readers.push_back(r);
     }
+    ifs.close();
     return true;
 }
 
@@ -151,9 +223,15 @@ bool Library::saveBooks(const string &filename)
 {
         ofstream ofs(filename);
     if (!ofs) return false;
-    for (const auto& pair : books) {
-        const Book& b = pair.second;
-        ofs << b.getId() << "|" << b.getTitle() << "|" << b.getAuthor() 
+    vector<string> ids;
+    ids.reserve(books.size());
+    for (const auto& kv : books) ids.push_back(kv.first);
+    sort(ids.begin(), ids.end());
+    for (const auto& id : ids) {
+        auto it = books.find(id);
+        if (it == books.end()) continue;
+        const Book& b = it->second;
+        ofs << b.getId() << "|" << b.getTitle() << "|" << b.getAuthor()
             << "|" << b.getQuantity() << "|" << (b.getAvailability() ? "1" : "0") << "\n";
     }
     ofs.close();
@@ -169,7 +247,7 @@ bool Library::saveReaders(const string &filename)
         const auto& borrowed = r.getBorrowed();
         for (size_t i = 0; i < borrowed.size(); ++i) {
             ofs << borrowed[i];
-            if (i + 1 < borrowed.size()) ofs << ",";
+            if (i + 1 < borrowed.size()) ofs << ", ";
         }
         ofs << "\n";
     }
@@ -180,7 +258,11 @@ bool Library::saveReaders(const string &filename)
 bool Library::addReader(const Reader& r) {
     // Kiem tra trung ID
     if (readerExists(r.getId())) return false;
-    readers.push_back(r); 
+    readers.push_back(r);
+
+    stringstream ss;
+    ss << r.getId() << "|" << r.getName();
+    writeFile("readers_them.txt", ss.str()); 
     return true; 
 }
 
@@ -212,7 +294,10 @@ bool Library::removeBook(const string& bookId) {
             if (bid == bookId) return false;  // Sach dang duoc muon, khong the xoa
         }
     }
-    
+    //Luu thong tin sach bi xoa
+    stringstream ss;
+    ss << it->second.getId() << "|" << it->second.getTitle() << "|" << it->second.getAuthor() << "|" << it->second.getQuantity() << "|" << (it->second.getAvailability() ? "1" : "0");
+    writeFile("books_xoa.txt", ss.str());
     books.erase(it);
     return true;
 }
@@ -224,6 +309,10 @@ bool Library::removeReader(const string& readerId) {
             if (!it->getBorrowed().empty()) {
                 return false;  // Doc gia dang muon sach, khong the xoa
             }
+            // Luu thong tin doc gia bi xoa
+            stringstream ss;
+            ss << it->getId() << "|" << it->getName();
+            writeFile("readers_xoa.txt", ss.str());
             readers.erase(it);
             return true;
         }

@@ -16,8 +16,9 @@ void showMenu() {
 	cout << "6. Tra sach\n";
 	cout << "7. Liet ke doc gia\n";
 	cout << "8. Them doc gia\n";
-	cout << "9. Xoa sach\n";
-	cout << "10. Xoa doc gia\n";
+	cout << "9. Them sach\n";
+	cout << "10. Xoa sach\n";
+	cout << "11. Xoa doc gia\n";
 	cout << "0. Thoat\n";
 }
 
@@ -92,13 +93,24 @@ int main()
 				cout << "Them that bai.\n";
 			}
 		} else if (choice == 9) {
+			cout << "Ma sach moi: "; string id; getline(cin, id);
+			cout << "Tieu de: "; string title; getline(cin, title);
+			cout << "Tac gia: "; string author; getline(cin, author);
+			cout << "So luong: "; int qty; cin >> qty; cin.ignore();
+			Book b(id, title, author, qty, true);
+			if (lib.addBook(b)) {
+				cout << "Da them sach.\n";
+			} else {
+				cout << "Them that bai. Ma sach da ton tai!\n";
+			}
+		} else if (choice == 10) {
 			cout << "Ma sach can xoa: "; string bid; getline(cin, bid);
 			if (lib.removeBook(bid)) {
 				cout << "Da xoa sach.\n";
 			} else {
 				cout << "Xoa that bai (khong tim thay hoac dang duoc muon).\n";
 			}
-		} else if (choice == 10) {
+		} else if (choice == 11) {
 			cout << "Ma doc gia can xoa: "; string rid; getline(cin, rid);
 			if (lib.removeReader(rid)) {
 				cout << "Da xoa doc gia.\n";

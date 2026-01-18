@@ -9,7 +9,7 @@ using namespace std;
 
 class Library {
 private:
-    unordered_map<string, Book> books;  // Hash table: key = book ID, value = Book object
+    unordered_map<string, Book> books;
     vector<Reader> readers;
     void writeFile(const string& filename, const string& content);
 
@@ -17,7 +17,7 @@ public:
     Library();
     ~Library();
 
-    void addBook(const Book& book);
+    bool addBook(const Book& book);
     bool borrowBook(const string& bookId, const string& readerId);
     bool returnBook(const string& bookId, const string& readerId);
     vector<Book> searchByTitle(const string& keyword) const;
