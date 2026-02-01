@@ -1,103 +1,320 @@
-# Hệ Thống Quản Lý Thư Viện - Phân tích Cấu Trúc Dữ Liệu & Giải Thuật
-
-## 📚 Mục lục
-
-1. [Tổng quan kiến trúc](#tổng-quan-kiến-trúc)
-2. [Cấu trúc dữ liệu chính](#cấu-trúc-dữ-liệu-chính)
-3. [Phân tích từng thao tác](#phân-tích-từng-thao-tác)
-4. [Độ phức tạp thời gian & không gian](#độ-phức-tạp-thời-gian--không-gian)
-5. [Chiến lược tối ưu](#chiến-lược-tối-ưu)
-6. [Bảo vệ dữ liệu](#bảo-vệ-dữ-liệu)
+# 📚 HỆ THỐNG QUẢN LÝ THƯ VIỆN
+## Phân Tích Chi Tiết Cấu Trúc Dữ Liệu & Giải Thuật
 
 ---
 
-## 🏗️ Tổng quan kiến trúc
+## 📑 MỤC LỤC
 
+1. [Tổng Quan Dự Án](#1-tổng-quan-dự-án)
+2. [Kiến Trúc Hệ Thống](#2-kiến-trúc-hệ-thống)
+3. [Cấu Trúc Dữ Liệu](#3-cấu-trúc-dữ-liệu)
+4. [Thuật Toán & Phân Tích Độ Phức Tạp](#4-thuật-toán--phân-tích-độ-phức-tạp)
+5. [Chi Tiết Implementation](#5-chi-tiết-implementation)
+6. [Quản Lý File & Persistence](#6-quản-lý-file--persistence)
+7. [Tối Ưu Hóa & Trade-offs](#7-tối-ưu-hóa--trade-offs)
+8. [Hướng Phát Triển](#8-hướng-phát-triển)
+
+---
+
+## 1. TỔNG QUAN DỰ ÁN
+
+### 1.1. Mô Tả
+Hệ thống quản lý thư viện số với các chức năng:
+- ✅ Quản lý sách (thêm, xóa, tìm kiếm, cập nhật số lượng)
+- ✅ Quản lý độc giả (thêm, xóa, theo dõi lịch sử mượn)
+- ✅ Xử lý mượn/trả sách với kiểm soát tồn kho
+- ✅ Tìm kiếm theo tên sách, tác giả
+- ✅ Lưu trữ dữ liệu persistent qua file
+
+### 1.2. Cấu Trúc Files
 ```
-┌────────────────────────────────────────────────┐
-│           Library (Quản lý tổng hợp)           │
-├────────────────────────────────────────────────┤
-│                                                │
-│  ┌──────────────────────────────────────────┐ │
-│  │  unordered_map<string, Book> books       │ │
-│  │  (Bảng hash - tìm kiếm O(1))             │ │
-│  └──────────────────────────────────────────┘ │
-│                                                │
-│  ┌──────────────────────────────────────────┐ │
-│  │  vector<Reader> readers                  │ │
-│  │  (Mảng động - duyệt O(n))                │ │
-│  └──────────────────────────────────────────┘ │
-│                                                │
-└────────────────────────────────────────────────┘
+LibraryManagement/
+├── Book.h / Book.cpp          # Class Sách
+├── Reader.h / Reader.cpp      # Class Độc giả
+├── Library.h / Library.cpp    # Class Thư viện (core)
+├── main.cpp                   # UI Console
+├── books.txt                  # Database sách
+├── readers.txt                # Database độc giả
+├── books_them.txt             # Log thêm sách
+├── books_xoa.txt              # Log xóa sách
+├── readers_them.txt           # Log thêm độc giả
+└── readers_xoa.txt            # Log xóa độc giả
 ```
 
 ---
 
-## 📋 Cấu trúc dữ liệu chính
+## 2. KIẾN TRÚC HỆ THỐNG
 
-### 1. **unordered_map<string, Book> books**
+### 2.1. Class Diagram
 
-**Lý do chọn:**
-- ✅ Tìm kiếm theo ID: **O(1)** (trung bình)
-- ✅ Thêm/Xóa sách: **O(1)** (trung bình)
-- ✅ Phù hợp với truy vấn thường xuyên: `findBookById()`, `bookExists()`
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Library (Core)                       │
+├─────────────────────────────────────────────────────────┤
+│ - unordered_map<string, Book> books                     │
+│ - vector<Reader> readers                                │
+├─────────────────────────────────────────────────────────┤
+│ + addBook(Book) : bool                                  │
+│ + removeBook(string) : bool                             │
+│ + borrowBook(string, string) : bool                     │
+│ + returnBook(string, string) : bool                     │
+│ + searchByTitle(string) : vector<Book>                  │
+│ + searchByAuthor(string) : vector<Book>                 │
+│ + loadBooks/saveBooks(string) : bool                    │
+└─────────────────────────────────────────────────────────┘
+           ▲                           ▲
+           │ contains                  │ contains
+           │                           │
+┌──────────┴──────────┐    ┌──────────┴──────────────┐
+│       Book          │    │       Reader            │
+├─────────────────────┤    ├─────────────────────────┤
+│ - id: string        │    │ - id: string            │
+│ - title: string     │    │ - name: string          │
+│ - author: string    │    │ - borrowedBookIds:      │
+│ - quantity: int     │    │   vector<string>        │
+│ - isAvailable: bool │    └─────────────────────────┘
+└─────────────────────┘
+```
 
-**Hoạt động:**
+### 2.2. Luồng Hoạt Động
+
+```
+main.cpp (UI)
+     │
+     ├──> Khởi tạo Library
+     │
+     ├──> Load dữ liệu: loadBooks(), loadReaders()
+     │         │
+     │         └──> Parse từ file → Validate → Insert vào structures
+     │
+     ├──> Xử lý thao tác người dùng
+     │    │
+     │    ├──> Add/Remove/Search → Update in-memory structures
+     │    │
+     │    ├──> Borrow/Return → Update Book quantity & Reader borrowed list
+     │    │
+     │    └──> Log operations → Append to log files
+     │
+     └──> Save dữ liệu: saveBooks(), saveReaders()
+               │
+               └──> Sort by ID → Write to file
+```
+
+---
+
+## 3. CẤU TRÚC DỮ LIỆU
+
+### 3.1. unordered_map<string, Book> books
+
+#### **Đặc Điểm Kỹ Thuật**
+
+**Cấu trúc:**
 ```cpp
-// Tìm sách theo ID
+// Hash Table với separate chaining
+unordered_map<string, Book> books;
+
+// Internal structure (conceptual):
+┌───────────────────────────────────┐
+│  Buckets (Hash Table)             │
+├───────────────────────────────────┤
+│ [0] → "B001" → Book{...}          │
+│ [1] → nullptr                     │
+│ [2] → "B042" → Book{...}          │
+│ [3] → "B015" → Book{...}          │
+│      ...                          │
+└───────────────────────────────────┘
+```
+
+**Lý do lựa chọn:**
+1. **Access Time O(1)**: Tìm kiếm nhanh theo mã sách
+2. **Insert/Delete O(1)**: Thêm/xóa hiệu quả
+3. **Key-Based Access**: Mã sách là unique identifier tự nhiên
+
+**Hash Function:**
+```cpp
+// Default std::hash<string> sử dụng thuật toán:
+// - Combine character codes với prime numbers
+// - FNV-1a hoặc MurmurHash (tùy implementation)
+// 
+// Ví dụ simplified:
+size_t hash = 0;
+for (char c : bookId) {
+    hash = hash * 31 + c;
+}
+return hash % bucket_count;
+```
+
+**Collision Resolution:**
+- **Method**: Separate Chaining (linked lists tại mỗi bucket)
+- **Load Factor**: α ≈ 1.0 (rehash khi α > max_load_factor)
+- **Performance**: O(1 + α) = O(1) average case
+
+#### **Operations Analysis**
+
+```cpp
+// 1. Tìm kiếm - O(1) average
 Book* findBookById(const string& id) {
-    auto it = books.find(id);           // O(1)
-    if (it != books.end()) {
-        return &(it->second);
-    }
-    return nullptr;
+    auto it = books.find(id);        // Hash lookup: O(1)
+    return (it != books.end()) ? &(it->second) : nullptr;
 }
 
-// Thêm sách mới
+// 2. Thêm sách - O(1) average
 bool addBook(const Book& book) {
-    if (bookExists(book.getId())) return false;  // O(1)
-    books[book.getId()] = book;                  // O(1)
+    if (bookExists(book.getId())) return false;  // O(1) check
+    books[book.getId()] = book;                  // O(1) insert
+    // Log to file: O(k) where k = string length
+    return true;
+}
+
+// 3. Xóa sách - O(1) average + O(n*m) validation
+bool removeBook(const string& bookId) {
+    auto it = books.find(bookId);    // O(1)
+    if (it == books.end()) return false;
+    
+    // Kiểm tra ràng buộc: sách không đang được mượn
+    // O(n*m): n readers, m borrowed books per reader
+    for (const auto& r : readers) {
+        for (const auto& bid : r.getBorrowed()) {
+            if (bid == bookId) return false;
+        }
+    }
+    
+    books.erase(it);                 // O(1)
     return true;
 }
 ```
 
-**Hash Function:**
-- Sử dụng default hash của `std::string`
-- Phân phối tốt cho mã sách như "B001", "B002", ...
-
-**Collision Handling:**
-- Sử dụng chaining (mặc định của unordered_map)
-
 ---
 
-### 2. **vector<Reader> readers**
+### 3.2. vector<Reader> readers
 
-**Lý do chọn:**
-- ✅ Quản lý độc giả theo danh sách tuần tự
-- ✅ Lặp duyệt hiệu quả: **O(n)**
-- ✅ Tìm kiếm thường không quá tần xuyên
+#### **Đặc Điểm Kỹ Thuật**
 
-**Hoạt động:**
+**Cấu trúc:**
 ```cpp
-// Tìm độc giả theo ID
+vector<Reader> readers;
+
+// Internal structure:
+┌────────────────────────────────────┐
+│  Dynamic Array                     │
+├────────────────────────────────────┤
+│ [0] Reader{id="R001", ...}         │
+│ [1] Reader{id="R002", ...}         │
+│ [2] Reader{id="R003", ...}         │
+│ ...                                │
+│ [capacity-1] (unused)              │
+└────────────────────────────────────┘
+```
+
+**Lý do lựa chọn:**
+1. **Sequential Access**: Thường cần duyệt toàn bộ danh sách
+2. **Cache Locality**: Dữ liệu liên tục trong bộ nhớ
+3. **Low Overhead**: Không tốn memory cho hash table
+4. **Infrequent Search**: Tìm kiếm độc giả ít khi thực hiện
+
+**Trade-off Analysis:**
+- **Ưu điểm**: Iteration O(n) nhanh, memory efficient
+- **Nhược điểm**: Search O(n) chậm hơn hash table
+- **Kết luận**: Phù hợp vì số lượng readers thường nhỏ (<1000)
+
+#### **Operations Analysis**
+
+```cpp
+// 1. Tìm kiếm - O(n) linear
 Reader* findReaderById(const string& id) {
-    for (auto &r : readers) {           // O(n)
+    for (auto &r : readers) {        // Linear scan: O(n)
         if (r.getId() == id) return &r;
     }
     return nullptr;
 }
 
-// Thêm độc giả mới
+// 2. Thêm độc giả - O(n) check + O(1) insert
 bool addReader(const Reader& r) {
     if (readerExists(r.getId())) return false;  // O(n)
-    readers.push_back(r);                        // O(1) amortized
+    readers.push_back(r);                       // O(1) amortized
     return true;
+}
+
+// 3. Xóa độc giả - O(n) search + O(n) erase
+bool removeReader(const string& readerId) {
+    for (auto it = readers.begin(); it != readers.end(); ++it) {
+        if (it->getId() == readerId) {
+            if (!it->getBorrowed().empty()) return false;  // O(1)
+            readers.erase(it);    // O(n) - shift elements
+            return true;
+        }
+    }
+    return false;
 }
 ```
 
-**Tại sao không dùng unordered_map:**
-- Độc giả ít thay đổi
-- Thường cần duyệt toàn bộ danh sách
+**Vector Dynamic Resizing:**
+```cpp
+// Capacity growth strategy:
+// - Initial capacity: 0
+// - Growth factor: 2x (MSVC) hoặc 1.5x (GCC/Clang)
+// - Amortized O(1) insertion:
+//   * n inserts → log(n) resizes
+//   * Total copies: n + n/2 + n/4 + ... = 2n
+//   * Average per insert: 2n/n = O(1)
+```
+
+---
+
+### 3.3. vector<string> borrowedBookIds (trong Reader)
+
+#### **Đặc Điểm**
+
+```cpp
+class Reader {
+    vector<string> borrowedBookIds;  // Danh sách mã sách đã mượn
+};
+```
+
+**Lý do lựa chọn:**
+- ✅ Số sách mượn nhỏ (thường <10)
+- ✅ Thao tác chính: append (mượn) và linear search (trả)
+- ✅ Không cần truy cập ngẫu nhiên nhanh
+
+**Operations:**
+```cpp
+// Mượn sách - O(1)
+void borrowBook(const string& bookId) {
+    borrowedBookIds.push_back(bookId);  // Append: O(1) amortized
+}
+
+// Trả sách - O(m) where m = số sách đã mượn
+bool returnBook(const string& bookId) {
+    for (auto it = borrowedBookIds.begin(); it != borrowedBookIds.end(); ++it) {
+        if (*it == bookId) {
+            borrowedBookIds.erase(it);   // O(m) shift
+            return true;
+        }
+    }
+    return false;
+}
+```
+
+---
+
+## 4. THUẬT TOÁN & PHÂN TÍCH ĐỘ PHỨC TẠP
+
+### 4.1. Tìm Kiếm (Search Algorithms)
+
+#### **4.1.1. Tìm theo ID (Hash-based)**
+
+```cpp
+Book* findBookById(const string& id) {
+    auto it = books.find(id);
+    return (it != books.end()) ? &(it->second) : nullptr;
+}
+```
+
+**Phân tích:**
+- **Time Complexity**: O(1) average, O(n) worst case
+- **Space Complexity**: O(1)
+- **Best Case**: Direct hit trong hash bucket
+- **Worst Case**: Tất cả keys hash vào cùng bucket (collision chain)
 - Vector có cache locality tốt hơn
 
 ---
