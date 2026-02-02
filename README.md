@@ -315,174 +315,820 @@ Book* findBookById(const string& id) {
 - **Space Complexity**: O(1)
 - **Best Case**: Direct hit trong hash bucket
 - **Worst Case**: Tất cả keys hash vào cùng bucket (collision chain)
-- Vector có cache locality tốt hơn
 
----
-
-### 3. **vector<string> (trong Reader)**
-
-**Danh sách sách đã mượn:**
-```cpp
-vector<string> borrowedBookIds;  // IDs of borrowed books
-```
-
-**Lý do:**
-- Mỗi độc giả mượn ít sách (thường < 10)
-- Tìm kiếm trong danh sách nhỏ → O(n) chấp nhận được
-- Thêm/xóa sách dễ dàng
-
----
-
-## 🔍 Phân tích từng thao tác
-
-### 1. **Load Books từ File**
+#### **4.1.2. Tìm theo Title/Author (Linear Search)**
 
 ```cpp
-bool Library::loadBooks(const string& filename) {
-    ifstream ifs(filename);
-    string line;
-    while (getline(ifs, line)) {  // O(m) - m dòng file
-        // Parse: id|title|author|quantity|available
-        stringstream ss(line);
-        string id, title, author, qty, avail;
-        
-        getline(ss, id, '|');        // O(1)
-        // ... other fields ...
-        
-        int quantity = stoi(qty);     // O(1)
-        Book b(id, title, author, qty);
-        
-        books[b.getId()] = b;         // O(1) hash insert
-    }
-    return true;
-}
-```
-
-**Độ phức tạp:** `O(m)` - m là số sách  
-**Bộ nhớ:** `O(m)` - lưu m cuốn sách
-
----
-
-### 2. **Tìm kiếm theo ID**
-
-```cpp
-Book* Library::findBookById(const string& id) {
-    auto it = books.find(id);    // O(1) hash lookup
-    if (it != books.end()) {
-        return &(it->second);
-    }
-    return nullptr;
-}
-```
-
-**Độ phức tạp:** 
-- **Trung bình:** `O(1)` ✅
-- **Tệ nhất:** `O(m)` (khi có hash collision)
-
----
-
-### 3. **Tìm kiếm theo Tiêu đề**
-
-```cpp
-vector<Book> Library::searchByTitle(const string& keyword) const {
+vector<Book> searchByTitle(const string& keyword) const {
     string k = toLower(keyword);
     vector<Book> res;
     
-    for (const auto& pair : books) {     // O(m) duyệt tất cả sách
+    for (const auto& pair : books) {              // O(B) - duyệt B sách
         const Book& b = pair.second;
-        if (toLower(b.getTitle()).find(k) != string::npos) {  // O(t)
-            res.push_back(b);            // O(1) amortized
+        if (toLower(b.getTitle()).find(k) != string::npos) {  // O(T)
+            res.push_back(b);
         }
     }
     return res;
 }
 ```
 
-**Độ phức tạp:** `O(m * t)` 
-- m = số sách
-- t = độ dài tiêu đề trung bình
+**Phân tích:**
+- **Time Complexity**: O(B × T)
+  - B = số sách
+  - T = độ dài title trung bình
+- **Space Complexity**: O(R) - R = số kết quả
+- **Algorithm**: Substring matching với case-insensitive
 
-**Tối ưu:** Có thể dùng **trie** hoặc **suffix tree** cho tìm kiếm nhanh hơn
+**String Matching Detail:**
+```cpp
+// find() sử dụng Boyer-Moore hoặc naive matching
+// Worst case: O(|text| × |pattern|)
+// Average: O(|text| + |pattern|)
+```
+
+**Optimization Ideas:**
+1. **Inverted Index**: Tạo map từ keyword → list of book IDs
+   - Space: O(V × B) với V = vocabulary size
+   - Query: O(1) + O(R)
+2. **Trie/Suffix Tree**: Cho prefix/substring search nhanh
+   - Query: O(|pattern| + R)
 
 ---
 
-### 4. **Mượn Sách**
+### 4.2. Thuật Toán Mượn/Trả Sách
+
+#### **4.2.1. Borrow Book Flow**
 
 ```cpp
-bool Library::borrowBook(const string& bookId, const string& readerId) {
-    auto it = books.find(bookId);        // O(1) tìm sách
+bool borrowBook(const string& bookId, const string& readerId) {
+    // Step 1: Tìm sách - O(1) hash lookup
+    auto it = books.find(bookId);
     if (it == books.end()) return false;
+    
+    // Step 2: Kiểm tra tồn kho - O(1)
     if (it->second.getQuantity() <= 0) return false;
     
-    Reader* r = findReaderById(readerId);  // O(n) tìm độc giả
+    // Step 3: Tìm độc giả - O(N) linear search
+    Reader* r = findReaderById(readerId);
     if (!r) return false;
     
-    it->second.decreaseQuantity(1);      // O(1) cập nhật số lượng
-    r->borrowBook(bookId);               // O(1) thêm vào vector
+    // Step 4: Cập nhật inventory - O(1)
+    it->second.decreaseQuantity(1);
+    if (it->second.getQuantity() == 0) {
+        it->second.setAvailability(false);
+    }
+    
+    // Step 5: Thêm vào borrowed list - O(1) amortized
+    r->borrowBook(bookId);
+    
     return true;
 }
 ```
 
-**Độ phức tạp:** `O(n)` - do tìm độc giả O(n)
+**Complexity Analysis:**
+- **Time**: O(N) dominated by findReaderById
+- **Space**: O(1) auxiliary
+- **Critical Path**: Reader lookup
 
-**Cải thiện:** Có thể dùng unordered_map cho readers → O(1)
+**Transaction Atomicity:**
+- Không có rollback mechanism
+- Nếu crash giữa decreaseQuantity và borrowBook → inconsistent state
+- **Fix**: Implement transaction log hoặc savepoint
+
+#### **4.2.2. Return Book Flow**
+
+```cpp
+bool returnBook(const string& bookId, const string& readerId) {
+    auto it = books.find(bookId);          // O(1)
+    if (it == books.end()) return false;
+    
+    Reader* r = findReaderById(readerId);  // O(N)
+    if (!r) return false;
+    
+    // Xóa khỏi borrowed list - O(M) where M = books borrowed by reader
+    if (r->returnBook(bookId)) {
+        it->second.increaseQuantity(1);    // O(1)
+        it->second.setAvailability(true);  // O(1)
+        return true;
+    }
+    return false;
+}
+
+// Trong Reader class:
+bool returnBook(const string& bookId) {
+    for (auto it = borrowedBookIds.begin(); it != borrowedBookIds.end(); ++it) {
+        if (*it == bookId) {
+            borrowedBookIds.erase(it);     // O(M) - shift elements
+            return true;
+        }
+    }
+    return false;
+}
+```
+
+**Complexity:**
+- **Time**: O(N + M)
+  - N = tìm reader
+  - M = xóa khỏi borrowed list
+- **Space**: O(1)
+
+**Optimization:**
+```cpp
+// Alternative: Dùng unordered_set<string> cho borrowedBookIds
+// returnBook sẽ trở thành O(1) thay vì O(M)
+unordered_set<string> borrowedBookIds;
+
+bool returnBook(const string& bookId) {
+    return borrowedBookIds.erase(bookId) > 0;  // O(1) average
+}
+```
 
 ---
 
-### 5. **Liệt kê Sách (với sắp xếp)**
+### 4.3. Thuật Toán Sorting & Display
+
+#### **4.3.1. List All Books (Sorted)**
 
 ```cpp
-void Library::listAll() const {
-    vector<const Book*> items;
-    items.reserve(books.size());
+void listAll() const {
+    // Step 1: Collect all IDs - O(B)
+    vector<string> ids;
+    for (const auto& kv : books) 
+        ids.push_back(kv.first);
     
-    for (const auto& kv : books)           // O(m) duyệt
-        items.push_back(&kv.second);
+    // Step 2: Sort IDs - O(B log B)
+    sort(ids.begin(), ids.end());
     
-    sort(items.begin(), items.end(),       // O(m log m) sắp xếp
-         [](const Book* a, const Book* b){ 
-             return a->getId() < b->getId(); 
-         });
-    
-    for (const Book* bp : items) {         // O(m) in
-        // ... display ...
+    // Step 3: Display sorted - O(B)
+    for (const auto& id : ids) {
+        auto it = books.find(id);    // O(1) per lookup
+        // Print book info...
     }
 }
 ```
 
-**Độ phức tạp:** `O(m log m)` - do sắp xếp
+**Complexity Analysis:**
+- **Time**: O(B log B) - dominated by sorting
+- **Space**: O(B) - temporary vector of IDs
 
-**Bộ nhớ thêm:** `O(m)` - vector pointers
+**Sorting Algorithm (std::sort):**
+- **Implementation**: Introsort (hybrid)
+  - QuickSort: O(n log n) average
+  - HeapSort: O(n log n) worst case fallback
+  - InsertionSort: O(n²) for small subarrays (<16 elements)
+- **Stable**: NO (use std::stable_sort if needed)
+
+**Alternative Approaches:**
+1. **Maintain sorted order**: Use `map<string, Book>` thay vì `unordered_map`
+   - Pro: Always sorted, listAll becomes O(B)
+   - Con: Insert/Find O(log B) thay vì O(1)
+2. **Cache sorted list**: Invalidate khi có thay đổi
+   - Pro: Amortized O(1) if read >> write
+   - Con: Memory overhead + invalidation logic
 
 ---
 
-### 6. **Xóa Sách (với kiểm tra ràng buộc)**
+### 4.4. Thuật Toán Delete Operations
+
+#### **4.4.1. Remove Book with Constraint Checking**
 
 ```cpp
-bool Library::removeBook(const string& bookId) {
-    auto it = books.find(bookId);          // O(1) tìm sách
+bool removeBook(const string& bookId) {
+    // Step 1: Tìm sách - O(1)
+    auto it = books.find(bookId);
     if (it == books.end()) return false;
     
-    // Kiểm tra không ai đang mượn
-    for (const auto& r : readers) {        // O(n) duyệt độc giả
+    // Step 2: Kiểm tra ràng buộc - O(N × M)
+    for (const auto& r : readers) {               // O(N) readers
         const auto& borrowed = r.getBorrowed();
-        for (const auto& bid : borrowed) { // O(k) duyệt sách mượn/người
-            if (bid == bookId) return false;
+        for (const auto& bid : borrowed) {        // O(M) borrowed per reader
+            if (bid == bookId) return false;      // Sách đang được mượn
         }
     }
     
-    books.erase(it);                       // O(1) xóa
+    // Step 3: Log deletion - O(k) string concatenation
+    stringstream ss;
+    ss << it->second.getId() << "|" << ...;
+    writeFile("books_xoa.txt", ss.str());
+    
+    // Step 4: Delete - O(1)
+    books.erase(it);
     return true;
 }
 ```
 
-**Độ phức tạp:** `O(n * k)`
-- n = số độc giả
-- k = sách mượn trung bình/người
+**Complexity:**
+- **Time**: O(N × M) worst case
+  - N = số readers
+  - M = trung bình sách mượn/reader
+- **Space**: O(k) where k = log entry size
+
+**Bottleneck**: Nested loop để check constraint
+
+**Optimization Strategy:**
+```cpp
+// Maintain reverse index: bookId → set of readerIds who borrowed it
+unordered_map<string, unordered_set<string>> bookBorrowers;
+
+// Check constraint becomes O(1):
+bool canRemoveBook(const string& bookId) {
+    auto it = bookBorrowers.find(bookId);
+    return (it == bookBorrowers.end() || it->second.empty());
+}
+
+// Trade-off: Extra O(B) space + maintain consistency on borrow/return
+```
+
+#### **4.4.2. Remove Reader**
+
+```cpp
+bool removeReader(const string& readerId) {
+    for (auto it = readers.begin(); it != readers.end(); ++it) {
+        if (it->getId() == readerId) {
+            // Check constraint - O(1)
+            if (!it->getBorrowed().empty()) {
+                return false;  // Đang mượn sách
+            }
+            
+            // Log & erase - O(N) vector erase
+            writeFile("readers_xoa.txt", ...);
+            readers.erase(it);  // Shift remaining elements
+            return true;
+        }
+    }
+    return false;
+}
+```
+
+**Complexity:**
+- **Time**: O(N) - linear search + vector erase
+- **Space**: O(1)
+
+**Vector Erase Mechanism:**
+```cpp
+// erase(iterator) shifts all subsequent elements left
+// Example: [A, B, C, D] → erase B → [A, C, D]
+// Copies: n - index - 1 elements
+
+// Optimization: Swap with last element if order không quan trọng
+readers[index] = readers.back();
+readers.pop_back();  // O(1) instead of O(n)
+```
 
 ---
 
-## 📊 Độ phức tạp thời gian & không gian
+### 4.5. File I/O Algorithms
+
+#### **4.5.1. Load Books from File**
+
+```cpp
+bool loadBooks(const string& filename) {
+    ifstream ifs(filename);
+    string line;
+    
+    while (getline(ifs, line)) {              // O(L) - L lines
+        stringstream ss(line);
+        string id, title, author, qty, avail;
+        
+        // Parsing - O(k) per line, k = line length
+        getline(ss, id, '|');
+        getline(ss, title, '|');
+        getline(ss, author, '|');
+        getline(ss, qty, '|');
+        getline(ss, avail);
+        
+        // Validation
+        if (bookExists(id)) {                 // O(1) hash check
+            cout << "Canh bao: Ma sach da ton tai\n";
+            continue;
+        }
+        
+        // Parse quantity - O(d) where d = number of digits
+        int quantity = stoi(qty);
+        
+        // Insert - O(1) average
+        Book b(id, title, author, quantity);
+        books[id] = b;
+    }
+    return true;
+}
+```
+
+**Complexity:**
+- **Time**: O(L × k) 
+  - L = số dòng
+  - k = độ dài dòng trung bình
+- **Space**: O(B) - store B books
+- **I/O**: Buffered read → O(file_size)
+
+**Error Handling:**
+- ✅ Skip empty lines
+- ✅ Handle missing fields với defaults
+- ✅ Validate quantity (không âm)
+- ✅ Duplicate ID detection
+- ✅ Exception handling cho stoi()
+
+#### **4.5.2. Save Books to File**
+
+```cpp
+bool saveBooks(const string& filename) {
+    ofstream ofs(filename);
+    
+    // Step 1: Collect & sort IDs - O(B log B)
+    vector<string> ids;
+    ids.reserve(books.size());
+    for (const auto& kv : books) ids.push_back(kv.first);
+    sort(ids.begin(), ids.end());
+    
+    // Step 2: Write sorted - O(B × k)
+    for (const auto& id : ids) {
+        auto it = books.find(id);
+        const Book& b = it->second;
+        ofs << b.getId() << "|" << b.getTitle() << "|" 
+            << b.getAuthor() << "|" << b.getQuantity() 
+            << "|" << (b.getAvailability() ? "1" : "0") << "\n";
+    }
+    
+    return true;
+}
+```
+
+**Complexity:**
+- **Time**: O(B log B + B × k) = O(B log B)
+- **Space**: O(B) - temporary ID vector
+- **I/O**: Buffered write
+
+**Design Choice**: Lưu sorted để dễ diff & human-readable
+
+---
+
+## 5. CHI TIẾT IMPLEMENTATION
+
+### 5.1. Class Book
+
+```cpp
+class Book {
+private:
+    string id;              // Primary key
+    string title;           // Searchable
+    string author;          // Searchable
+    bool isAvailable;       // Computed from quantity
+    int quantity;           // Inventory count
+    
+public:
+    // Constructors
+    Book();
+    Book(const string& id, const string& title, 
+         const string& author, int qty = 0, bool available = true);
+    
+    // Getters - O(1)
+    string getId() const;
+    string getTitle() const;
+    string getAuthor() const;
+    bool getAvailability() const;
+    int getQuantity() const;
+    
+    // Setters with validation - O(1)
+    void setAvailability(bool available);
+    void setQuantity(int qty);           // Check qty >= 0
+    void increaseQuantity(int amount);   // Check amount > 0
+    void decreaseQuantity(int amount);   // Check sufficient qty
+};
+```
+
+**Design Decisions:**
+1. **String for ID**: Flexible format (B001, ISBN, etc.)
+2. **Redundant isAvailable**: Cache để tránh check quantity nhiều lần
+3. **Validation in setters**: Đảm bảo invariants
+4. **Const correctness**: Getters are const methods
+
+**Memory Layout:**
+```
+sizeof(Book) ≈ 
+  sizeof(string) * 3    // id, title, author (~72 bytes)
+  + sizeof(bool)        // isAvailable (1 byte + padding)
+  + sizeof(int)         // quantity (4 bytes)
+  ≈ 80-100 bytes per book
+```
+
+---
+
+### 5.2. Class Reader
+
+```cpp
+class Reader {
+private:
+    string id;                      // Primary key
+    string name;                    // Display name
+    vector<string> borrowedBookIds; // Foreign keys
+    
+public:
+    Reader(const string& id, const string& name);
+    
+    // Getters - O(1)
+    string getId() const;
+    string getName() const;
+    const vector<string>& getBorrowed() const;
+    
+    // Operations
+    void borrowBook(const string& bookId);       // O(1) amortized
+    bool returnBook(const string& bookId);       // O(M)
+};
+```
+
+**Key Points:**
+- **borrowedBookIds**: Vector thay vì set
+  - Pro: Simple, low overhead for small M
+  - Con: O(M) return operation
+- **Return by const reference**: Avoid copying vector
+
+---
+
+### 5.3. Class Library
+
+```cpp
+class Library {
+private:
+    unordered_map<string, Book> books;   // Main book database
+    vector<Reader> readers;               // Reader database
+    
+    // Helper
+    void writeFile(const string& filename, const string& content);
+    
+public:
+    // CRUD for Books
+    bool addBook(const Book& book);                    // O(1)
+    bool removeBook(const string& bookId);             // O(N×M)
+    Book* findBookById(const string& id);              // O(1)
+    bool bookExists(const string& id) const;           // O(1)
+    
+    // CRUD for Readers
+    bool addReader(const Reader& r);                   // O(N)
+    bool removeReader(const string& readerId);         // O(N)
+    Reader* findReaderById(const string& id);          // O(N)
+    bool readerExists(const string& id) const;         // O(N)
+    
+    // Search
+    vector<Book> searchByTitle(const string& kw) const;   // O(B×T)
+    vector<Book> searchByAuthor(const string& kw) const;  // O(B×A)
+    vector<Book> suggest(const string& keyword) const;    // Alias
+    
+    // Transactions
+    bool borrowBook(const string& bookId, 
+                    const string& readerId);           // O(N)
+    bool returnBook(const string& bookId,
+                    const string& readerId);           // O(N+M)
+    
+    // Display
+    void listAll() const;                              // O(B log B)
+    void listReaders() const;                          // O(N)
+    
+    // Persistence
+    bool loadBooks(const string& filename);            // O(L×k)
+    bool saveBooks(const string& filename);            // O(B log B)
+    bool loadReaders(const string& filename);          // O(L×k)
+    bool saveReaders(const string& filename);          // O(N)
+};
+```
+
+**Architecture Pattern**: Facade Pattern
+- Library class encapsulates all operations
+- Client (main.cpp) không trực tiếp access Book/Reader
+
+---
+
+## 6. QUẢN LÝ FILE & PERSISTENCE
+
+### 6.1. File Format
+
+#### **books.txt**
+```
+Format: id|title|author|quantity|available
+Example:
+B001|Introduction to Algorithms|Cormen|5|1
+B002|Clean Code|Robert Martin|0|0
+B003|Design Patterns|Gang of Four|3|1
+```
+
+#### **readers.txt**
+```
+Format: id|name|borrowedBook1,borrowedBook2,...
+Example:
+R001|Nguyen Van A|B001,B005
+R002|Tran Thi B|
+R003|Le Van C|B002,B003,B007
+```
+
+### 6.2. Log Files
+
+**Purpose**: Audit trail + debugging
+
+**books_them.txt**: Log additions
+```
+B001|Introduction to Algorithms|Cormen|5
+B004|The Pragmatic Programmer|Hunt|2
+```
+
+**books_xoa.txt**: Log deletions
+```
+B010|Old Book|Unknown|0|0
+```
+
+**Design Trade-off:**
+- ✅ Append-only → Fast write
+- ✅ Không mất dữ liệu historical
+- ❌ Không có timestamp
+- ❌ Không có rollback mechanism
+
+---
+
+## 7. TỐI ƯU HÓA & TRADE-OFFS
+
+### 7.1. Space-Time Trade-offs
+
+| Optimization | Time Benefit | Space Cost | Worth It? |
+|---|---|---|---|
+| **books: map → unordered_map** | O(log B) → O(1) | +20% overhead | ✅ YES |
+| **readers: vector → unordered_map** | O(N) → O(1) | +O(N) overhead | ⚠️ If N > 1000 |
+| **borrowedBookIds: vector → unordered_set** | O(M) → O(1) return | +O(M) overhead | ⚠️ If M > 10 |
+| **Inverted index for search** | O(B×T) → O(1) | +O(V×B) memory | ❌ NO for small B |
+| **Cache sorted book list** | O(B log B) → O(1) | +O(B) memory | ⚠️ If reads >> writes |
+
+### 7.2. Current Bottlenecks
+
+1. **removeBook() - O(N×M)**
+   ```cpp
+   // Problem: Nested loop check
+   for (const auto& r : readers) {
+       for (const auto& bid : r.getBorrowed()) {
+           if (bid == bookId) return false;
+       }
+   }
+   
+   // Solution: Maintain reverse index
+   unordered_map<string, unordered_set<string>> bookToBorrowers;
+   ```
+
+2. **searchByTitle() - O(B×T)**
+   ```cpp
+   // Problem: Linear scan với substring match
+   
+   // Solution 1: Inverted index
+   unordered_map<string, vector<string>> wordToBookIds;
+   
+   // Solution 2: Trie for prefix search
+   class Trie {
+       struct Node {
+           unordered_map<char, Node*> children;
+           vector<string> bookIds;
+       };
+   };
+   ```
+
+3. **findReaderById() - O(N)**
+   ```cpp
+   // Problem: Linear search
+   
+   // Solution: Change to unordered_map
+   unordered_map<string, Reader> readers;
+   ```
+
+### 7.3. Recommended Improvements
+
+#### **Phase 1: Immediate Wins**
+```cpp
+// 1. Đổi readers thành hash map
+unordered_map<string, Reader> readers;
+// Impact: borrowBook, returnBook: O(N) → O(1)
+
+// 2. Dùng unordered_set cho borrowedBookIds
+unordered_set<string> borrowedBookIds;
+// Impact: returnBook: O(M) → O(1)
+
+// 3. Reserve capacity cho vectors
+books.reserve(1000);
+ids.reserve(books.size());
+```
+
+**Performance Impact:**
+- borrowBook: O(N) → O(1) ⚡ **100x faster for N=100**
+- returnBook: O(N+M) → O(1) ⚡ **10x faster**
+
+#### **Phase 2: Advanced Optimizations**
+```cpp
+// 1. Maintain bookToBorrowers index
+unordered_map<string, unordered_set<string>> bookToBorrowers;
+
+// Update on borrow:
+void borrowBook(bookId, readerId) {
+    // ... existing code ...
+    bookToBorrowers[bookId].insert(readerId);
+}
+
+// Update on return:
+void returnBook(bookId, readerId) {
+    // ... existing code ...
+    bookToBorrowers[bookId].erase(readerId);
+}
+
+// Fast removeBook:
+bool removeBook(const string& bookId) {
+    if (!bookToBorrowers[bookId].empty()) return false;  // O(1)
+    // ... rest of code ...
+}
+```
+
+**Performance:**
+- removeBook: O(N×M) → O(1) ⚡ **1000x faster**
+
+---
+
+## 8. HƯỚNG PHÁT TRIỂN
+
+### 8.1. Feature Enhancements
+
+1. **Advanced Search**
+   ```cpp
+   // Multi-field search
+   vector<Book> search(const SearchCriteria& criteria);
+   
+   // Fuzzy matching (Levenshtein distance)
+   vector<Book> fuzzySearch(const string& keyword, int maxDistance = 2);
+   
+   // Autocomplete
+   vector<string> autocomplete(const string& prefix, int limit = 10);
+   ```
+
+2. **Transaction Management**
+   ```cpp
+   class Transaction {
+       enum Type { BORROW, RETURN, ADD_BOOK, REMOVE_BOOK };
+       Type type;
+       string timestamp;
+       string userId;
+       string bookId;
+   };
+   
+   vector<Transaction> transactionHistory;
+   void rollback(const Transaction& t);
+   ```
+
+3. **Caching Layer**
+   ```cpp
+   class LRUCache<K, V> {
+       list<pair<K, V>> items;
+       unordered_map<K, list<pair<K, V>>::iterator> cache;
+       size_t capacity;
+   public:
+       V* get(const K& key);        // O(1)
+       void put(const K& key, const V& val);  // O(1)
+   };
+   
+   LRUCache<string, Book> recentBooks;
+   ```
+
+### 8.2. Data Structure Upgrades
+
+1. **B+ Tree for Books**
+   - Hỗ trợ range queries: "Tìm sách ID từ B100-B200"
+   - Disk-friendly cho large datasets
+   
+2. **Trie for Title Search**
+   ```
+   Root
+   ├─ I → n → t → r → o → ... [B001]
+   ├─ C → l → e → a → n → ... [B002]
+   └─ D → e → s → i → g → n → ... [B003]
+   ```
+
+3. **Bloom Filter for Existence Check**
+   ```cpp
+   BloomFilter bookFilter(10000, 0.01);  // 10k items, 1% false positive
+   
+   bool mayExist(const string& id) {
+       return bookFilter.contains(id);  // O(k) with k hash functions
+   }
+   ```
+
+### 8.3. Scalability
+
+**Current Limits:**
+- Books: ~10,000 (memory constraint)
+- Readers: ~1,000 (O(N) search acceptable)
+- File I/O: Single-threaded, blocking
+
+**Scaling Strategy:**
+1. **Database Migration**: SQLite/MySQL
+2. **Indexing**: B-tree indices on ID, title, author
+3. **Concurrent Access**: Mutex/RW locks
+4. **Pagination**: Không load toàn bộ vào memory
+
+### 8.4. Code Quality
+
+1. **Unit Testing**
+   ```cpp
+   TEST(LibraryTest, BorrowBookDecreasesQuantity) {
+       Library lib;
+       Book b("B001", "Test", "Author", 5);
+       lib.addBook(b);
+       Reader r("R001", "User");
+       lib.addReader(r);
+       
+       ASSERT_TRUE(lib.borrowBook("B001", "R001"));
+       ASSERT_EQ(lib.findBookById("B001")->getQuantity(), 4);
+   }
+   ```
+
+2. **Error Handling**
+   ```cpp
+   enum class LibraryError {
+       BOOK_NOT_FOUND,
+       READER_NOT_FOUND,
+       INSUFFICIENT_QUANTITY,
+       BOOK_ALREADY_BORROWED,
+       DUPLICATE_ID
+   };
+   
+   Result<bool, LibraryError> borrowBook(...);
+   ```
+
+3. **Logging**
+   ```cpp
+   class Logger {
+   public:
+       static void info(const string& msg);
+       static void error(const string& msg);
+       static void debug(const string& msg);
+   };
+   ```
+
+---
+
+## 📊 BẢNG TỔNG HỢP ĐỘ PHỨC TẠP
+
+| Operation | Time Complexity | Space Complexity | Notes |
+|-----------|----------------|------------------|-------|
+| **Load Books** | O(L × k) | O(B) | L lines, k chars/line |
+| **Save Books** | O(B log B) | O(B) | Sorting overhead |
+| **Add Book** | O(1) avg | O(1) | Hash insert |
+| **Remove Book** | O(N × M) | O(1) | Constraint check bottleneck |
+| **Find Book by ID** | O(1) avg | O(1) | Hash lookup |
+| **Search by Title** | O(B × T) | O(R) | Linear scan, T = title length |
+| **Search by Author** | O(B × A) | O(R) | Linear scan, A = author length |
+| **List All (sorted)** | O(B log B) | O(B) | Sorting IDs |
+| **Add Reader** | O(N) | O(1) | Duplicate check |
+| **Remove Reader** | O(N) | O(1) | Linear search + erase |
+| **Find Reader by ID** | O(N) | O(1) | Linear search |
+| **Borrow Book** | O(N) | O(1) | Find reader dominates |
+| **Return Book** | O(N + M) | O(1) | Find reader + linear erase |
+| **List Readers** | O(N) | O(1) | Simple iteration |
+
+**Legend:**
+- B = số sách
+- N = số độc giả
+- M = số sách mượn trung bình/người
+- L = số dòng file
+- k = độ dài dòng trung bình
+- R = số kết quả search
+- T = độ dài title
+- A = độ dài author name
+
+---
+
+## 🎯 KẾT LUẬN
+
+### Điểm Mạnh
+1. ✅ **Hash table cho Books**: O(1) access rất hiệu quả
+2. ✅ **Simple architecture**: Dễ hiểu, dễ maintain
+3. ✅ **File persistence**: Data không mất khi restart
+4. ✅ **Validation**: Error checking tốt
+5. ✅ **Audit trail**: Log files for debugging
+
+### Điểm Cần Cải Thiện
+1. ❌ **Reader lookup O(N)**: Nên dùng hash map
+2. ❌ **removeBook O(N×M)**: Cần reverse index
+3. ❌ **Search O(B×T)**: Có thể optimize với inverted index
+4. ❌ **No transaction support**: Risk của data inconsistency
+5. ❌ **Single-threaded**: Không handle concurrent access
+
+### Phù Hợp Cho
+- ✅ Small-medium scale: <10,000 books, <1,000 readers
+- ✅ Learning DSA: Demonstration của hash table, vector, string algorithms
+- ✅ Single-user application: Console-based library management
+
+### Không Phù Hợp Cho
+- ❌ Large-scale: >100,000 books (cần database)
+- ❌ Multi-user: Concurrent access (cần locks)
+- ❌ Real-time: Search latency có thể cao
+- ❌ Production: Thiếu error recovery, backup mechanisms
+
+---
+
+**Tác giả**: Library Management System  
+**Ngôn ngữ**: C++17  
+**Mục đích**: Educational project - Data Structures & Algorithms demonstration  
+**License**: MIT
 
 ### Bảng Độ phức tạp Thời gian
 
